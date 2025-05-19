@@ -1,175 +1,82 @@
-import { load } from 'cheerio';
-import { sendMessage } from "../telegram";
+import TelegramBot from 'node-telegram-bot-api';
+import Binance from 'binance-api-node';
+import statistics from 'statistics-lite'; // install via npm i statistics-lite
+import dayjs from 'dayjs'; // install via npm i dayjs
 
-export const config = {
-    maxDuration: 60,
-};
+// Token Telegram dan Binance API
+const TELEGRAM_TOKEN = '7648616378:AAHiaDQAh9vVrlOmbYA4X05CfrR5UbLm3EA';
+const BINANCE_API_KEY = '3YbYHtJZvgpv76wNRe6YWlk4pWM0Gxb6d8mufwVrivu1EZn35UhLT11H6d949qjE';
+const BINANCE_API_SECRET = 'Y3kNNmckJPcfYBkCSXGF4tNLSepyY5gNYviFvri9ZtAvnRFOkJEeYgJyQxxuFwdN';
 
-const live_match_controller = async () => {
-    const request = await fetch('https://www.cricbuzz.com/cricket-match/live-scores');
-    const body = await request.text();
-    const $ = load(body);
+// Inisialisasi bot dan binance client
+const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+const client = Binance({
+  apiKey: BINANCE_API_KEY,
+  apiSecret: BINANCE_API_SECRET,
+});
 
-    let series_array = [];
+// Fungsi analisa candlestick sederhana
+async function analyzeCandlestick() {
+  const klines = await client.candles({ symbol: 'DOGEUSDT', interval: '5m', limit: 20 });
+  const closes = klines.map(k => parseFloat(k.close));
+  const ma = statistics.mean(closes);
+  const last = closes[closes.length - 1];
 
-    $('div.cb-rank-tabs').each(function () {
-        const parent = $(this);
+  let trend = '';
+  if (last > ma) trend = 'Naik (Bullish) — Harga kemungkinan akan naik';
+  else if (last < ma) trend = 'Turun (Bearish) — Harga kemungkinan akan turun';
+  else trend = 'Sideways — Harga stabil / belum jelas arah';
 
-        parent.children().each(function () {
-            const children = $(this);
+  const now = dayjs().format('HH:mm:ss DD/MM/YYYY');
 
-            $(children).each(function () {
-                const series = $(this); // Series Page
-                const series_name = series.find('h2.cb-lv-scr-mtch-hdr > a').text();
-                const series_id_Href = series.find('h2.cb-lv-scr-mtch-hdr > a').attr('href') || "/cricket-series/80629/south-africa-women-tour-of-india-2024";
-
-                const seriesIdPart = series_id_Href.split("cricket-series/")[1];
-                const series_id = seriesIdPart.split("/")[0];
-
-                let matches_array = [];
-                $(series).find('div.cb-mtch-lst').each(function () {
-                    const matches = $(this); // Matches Page
-
-                    const team = matches.find('h3.cb-lv-scr-mtch-hdr > a').text();
-                    const matchIdHref = matches.find('h3.cb-lv-scr-mtch-hdr > a').attr('href');
-                    const matchId = matchIdHref.split("live-cricket-scores/")[1].split("/")[0];
-
-                    const matchStage = matches.find('div.cb-schdl > div > span.text-gray').text();
-                    const date = matches.find('div.text-gray').html();
-
-                    const timestampRegex = /(\d{13})/;
-                    const timeStamp = date.match(timestampRegex)[0];
-                    let time = {};
-                    if (timeStamp) {
-                        const timestamp = parseInt(timeStamp, 10);
-                        const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-                        const date = new Date(timestamp);
-
-                        const options = {
-                            timeZone: userTimeZone,
-                            weekday: 'long',
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                        };
-                        const formattedDate = date.toLocaleDateString('en-US', options);
-
-                        const timeOptions = {
-                            timeZone: userTimeZone,
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: true, // Use 12-hour format
-                        };
-
-                        const formattedTime = date.toLocaleTimeString('en-US', timeOptions);
-
-                        time = {
-                            formattedDate,
-                            formattedTime
-                        }
-                    }
-
-                    let score_data = {};
-
-                    $(matches).find('div > a > div.cb-col').each(function () {
-                        const score = $(this); // score
-
-
-                        const Team1 = score.find('div> div.cb-hmscg-bwl-txt > div.cb-hmscg-tm-nm').text();
-                        const Team1Score = score.find('div> div.cb-hmscg-bwl-txt > div.cb-ovr-flo').text().split(Team1)[1];
-
-                        const Team2 = score.find('div> div.cb-hmscg-bat-txt > div.cb-hmscg-tm-nm').text();
-                        const Team2Score = score.find('div> div.cb-hmscg-bat-txt > div.cb-ovr-flo').text().split(Team2)[1];
-
-                        const Result = score.find('div> div.cb-text-complete').text();
-                        const Live_Result = score.find('div> div.cb-text-live').text();
-
-                        score_data = {
-                            Team1,
-                            Team2,
-                            Team1Score: Team1Score || `the ${Team1} not batted yet`,
-                            Team2Score: Team2Score || `the ${Team2} not batted yet`,
-                            Result: Result || 'The match is not completed.',
-                            Live_Result: Live_Result || 'The match result is declared.'
-                        }
-                    });
-
-                    matches_array.push({
-                        team,
-                        matchId,
-                        matchStage,
-                        time,
-                        score_data
-                    })
-                });
-
-                if (series_name) {
-                    series_array.push({
-                        series_name,
-                        series_id,
-                        matches_array
-                    })
-                }
-            })
-
-
-        })
-
-    })
-
-
-    return (series_array);
-
-
+  return (
+    `*Analisis Sederhana DOGE/USDT*\n\n` +
+    `• Harga terakhir: *${last.toFixed(4)} USDT*\n` +
+    `• Rata-rata 20 candle: *${ma.toFixed(4)} USDT*\n` +
+    `• Kesimpulan: *${trend}*\n\n` +
+    `_Diperbarui: ${now}_`
+  );
 }
-  
-async function getLiveScores(data,chatId) {
-    for (let i = 0; i < data.length; i++) {
-        const series = data[i];
-        console.log("in series");
-        let liveScores = '';
-        liveScores += `📢 *Series:* ${series.series_name}\n`;
-    
-        for (let j = 0; j < series.matches_array.length; j++) {
-            const match = series.matches_array[j];
-            const {
-                team,
-                matchStage,
-                time: { formattedTime },
-                score_data: {
-                    Team1,
-                    Team2,
-                    Team1Score,
-                    Team2Score,
-                    Live_Result
-                }
-            } = match;
-    
-            liveScores += `\n🏏 *Match:* ${matchStage.trim()}\n`;
-            liveScores += `👥 *Teams:* ${Team1} vs ${Team2}\n`;
-            liveScores += `🕒 *Time:* ${formattedTime}\n`;
-            liveScores += `📊 *Scores:*\n`;
-            liveScores += `   - ${Team1}: ${Team1Score}\n`;
-            liveScores += `   - ${Team2}: ${Team2Score}\n`;
-            liveScores += `🔴 *Live Result:* ${Live_Result}\n`;
-            liveScores += `----------------------------------------\n`;
-        }
-    
-        liveScores += `\n`;
-        await sendMessage(chatId, liveScores);
+
+// Fungsi kirim analisis
+async function sendAnalysis(chatId, messageId = null) {
+  const text = await analyzeCandlestick();
+  const opts = {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      inline_keyboard: [[{ text: 'Cek Ulang', callback_data: 'cek_ulang' }]],
+    },
+  };
+
+  if (messageId) {
+    // Edit pesan untuk callback
+    try {
+      await bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...opts });
+    } catch (e) {
+      // Kalau gagal edit, kirim pesan baru
+      await bot.sendMessage(chatId, 'Gagal update. Coba lagi nanti.', { reply_markup: { remove_keyboard: true } });
     }
-    
-
+  } else {
+    // Kirim pesan baru
+    await bot.sendMessage(chatId, text, opts);
+  }
 }
 
+// Listener command /cek
+bot.onText(/\/cek/, async (msg) => {
+  const chatId = msg.chat.id;
+  await bot.sendMessage(chatId, 'Mengambil data candlestick...');
+  await sendAnalysis(chatId);
+});
 
+// Listener callback button
+bot.on('callback_query', async (callbackQuery) => {
+  const chatId = callbackQuery.message.chat.id;
+  const messageId = callbackQuery.message.message_id;
+  if (callbackQuery.data === 'cek_ulang') {
+    await sendAnalysis(chatId, messageId);
+    await bot.answerCallbackQuery(callbackQuery.id);
+  }
+});
 
-export async function cricketCommand(chatId){
-    let cricketData = await live_match_controller();
-    await getLiveScores(cricketData,chatId);
-    
-}
+console.log('Bot Telegram trading aktif...');
