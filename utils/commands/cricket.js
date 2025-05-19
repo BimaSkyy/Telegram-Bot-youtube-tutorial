@@ -4,9 +4,9 @@ import statistics from 'statistics-lite'; // install via npm i statistics-lite
 import dayjs from 'dayjs'; // install via npm i dayjs
 
 // Token Telegram dan Binance API
-const TELEGRAM_TOKEN = '7648616378:AAHiaDQAh9vVrlOmbYA4X05CfrR5UbLm3EA';
-const BINANCE_API_KEY = '3YbYHtJZvgpv76wNRe6YWlk4pWM0Gxb6d8mufwVrivu1EZn35UhLT11H6d949qjE';
-const BINANCE_API_SECRET = 'Y3kNNmckJPcfYBkCSXGF4tNLSepyY5gNYviFvri9ZtAvnRFOkJEeYgJyQxxuFwdN';
+const TELEGRAM_TOKEN = process.env.BOT_TOKEN
+const BINANCE_API_KEY = process.env.API_KEY
+const BINANCE_API_SECRET = process.env.SECRET_TOKEN
 
 // Inisialisasi bot dan binance client
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
