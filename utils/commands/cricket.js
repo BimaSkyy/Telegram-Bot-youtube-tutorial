@@ -1,25 +1,21 @@
 import TelegramBot from 'node-telegram-bot-api';
 import Binance from 'binance-api-node';
-import statistics from 'statistics-lite'; // install via npm i statistics-lite
-import dayjs from 'dayjs'; // install via npm i dayjs
+import dayjs from 'dayjs';
 
-// Token Telegram dan Binance API
-const TELEGRAM_TOKEN = process.env.BOT_TOKEN
-const BINANCE_API_KEY = process.env.API_KEY
-const BINANCE_API_SECRET = process.env.SECRET_TOKEN
+const TELEGRAM_TOKEN = process.env.BOT_TOKEN;
+const BINANCE_API_KEY = process.env.API_KEY;
+const BINANCE_API_SECRET = process.env.SECRET_TOKEN;
 
-// Inisialisasi bot dan binance client
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 const client = Binance({
   apiKey: BINANCE_API_KEY,
   apiSecret: BINANCE_API_SECRET,
 });
 
-// Fungsi analisa candlestick sederhana
 async function analyzeCandlestick() {
   const klines = await client.candles({ symbol: 'DOGEUSDT', interval: '5m', limit: 20 });
   const closes = klines.map(k => parseFloat(k.close));
-  const ma = statistics.mean(closes);
+  const ma = closes.reduce((sum, val) => sum + val, 0) / closes.length;
   const last = closes[closes.length - 1];
 
   let trend = '';
@@ -38,7 +34,6 @@ async function analyzeCandlestick() {
   );
 }
 
-// Fungsi kirim analisis
 async function sendAnalysis(chatId, messageId = null) {
   const text = await analyzeCandlestick();
   const opts = {
@@ -49,27 +44,22 @@ async function sendAnalysis(chatId, messageId = null) {
   };
 
   if (messageId) {
-    // Edit pesan untuk callback
     try {
       await bot.editMessageText(text, { chat_id: chatId, message_id: messageId, ...opts });
     } catch (e) {
-      // Kalau gagal edit, kirim pesan baru
       await bot.sendMessage(chatId, 'Gagal update. Coba lagi nanti.', { reply_markup: { remove_keyboard: true } });
     }
   } else {
-    // Kirim pesan baru
     await bot.sendMessage(chatId, text, opts);
   }
 }
 
-// Listener command /cek
 bot.onText(/\/cek/, async (msg) => {
   const chatId = msg.chat.id;
   await bot.sendMessage(chatId, 'Mengambil data candlestick...');
   await sendAnalysis(chatId);
 });
 
-// Listener callback button
 bot.on('callback_query', async (callbackQuery) => {
   const chatId = callbackQuery.message.chat.id;
   const messageId = callbackQuery.message.message_id;
